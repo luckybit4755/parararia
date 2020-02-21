@@ -41,7 +41,7 @@
 					self.context = self.canvas.getContext( '2d' );
 					self.context.fillText( 'loading...', 33, 33 );
 
-					//return self.ezTest();
+					return self.ezTest();
 					self.imageTest();
 				};
 
@@ -59,6 +59,16 @@
 						  {c:'black',s:'X',x: 4,y:8, x2: 6}
 						, {c:'black',s:'#',x: 16,y:24,x2: 16} 
 					];
+
+					n = 64;
+					ww = [];
+					for ( let y = 12 ; y < n ; y+= 12 ) {
+						let m = n / 2;
+						let o = y * 0.11 - 0;
+						let x  = m - o;
+						let x2 = m + o;
+						ww.push( {c:'black',s:'X',x:x,x2:x2, y:y} );
+					}
 
 					self.canvas.width = self.canvas.height = n;
 
@@ -79,12 +89,12 @@
 					let right = self.context.getImageData( 0, 0, n, n );
 					let ugR = self.context.getImageData( 0, 0, n, n ); // ???
 
-					let smoothDistance = 1 * 0;
+					let smoothDistance = 1;
 					let edgeDistance   = 1;
 					let precision      = 1;
 
-					let size = {x:2,y:1};
-					let area = {x:8,y:4};
+					let size = {x:3,y:2};
+					let area = {x:9,y:4};
 
 					let matches = self.leftAndRight( left, right, smoothDistance, edgeDistance, size, area, precision );
 
@@ -180,9 +190,6 @@
 					area = theD.ur( area , DEFAULT_HUNT_SEARCH_AREA );
 					precision = theD.ur( precision, 1 );
 
-					let c3 = document.createElement( 'canvas' );
-					c3.width = c3.height = 512; // fml
-
 					let w;
 					let h = self.canvas.height = left.height;
 
@@ -226,7 +233,7 @@
 						
 					let w1 = w * 1 ; let w2 = w * 2;
 
-					self.canvas.onmousemove = function( e ) {
+					let q = self.canvas.onmousemove = function( e ) {
 						let x = e.offsetX % w;
 						let k = x + ',' + e.offsetY;
 						let v = ( k in at ) ? at[ k ] : false; 
@@ -239,9 +246,16 @@
 							self.context.drawImage( left, w, 0 );
 						}
 
+						let sizeC = 'rgba(0,255,0,0.8)';
+						let areaC = 'rgba(0,0,255,0.8)';
+
+						let o = ( ( 1 - x / w ) - 0.5 ) * area.x * 1.5;
+
 						if( v ) {
-							self.fillRect( 'red',  v.x  + w1,  v.y, precision, precision ); // query
-							self.rectRound( 'rgba(0,255,0,0.8)'  , v.x + w1, v.y, size );
+							self.rectRound( sizeC  , w1 + v.x      , v.y, size );
+							self.rectRound( areaC,   w1 + v.x + o  , v.y, area );
+							self.fillRect( 'red',    w1 + v.x      ,  v.y, precision, precision ); // query
+							self.fillRect( 'green',  w1 + v.tx     ,  v.ty, precision, precision ); // response
 						}
 
 						if ( right ) {
@@ -251,13 +265,47 @@
 						}
 
 						if( v ) {
-							self.fillRect( 'red', v.tx + w2, v.ty, precision, precision ); // response
-							self.rectRound( 'rgba(0,0,255,0.8)', v.x + w2, v.y, area );
+							self.rectRound( areaC,  w2 + v.x + o , v.y, area );
+							self.fillRect( 'red',   w2 + v.x     , v.y, precision, precision ); // query
+							self.fillRect( 'green', w2 + v.tx    , v.ty, precision, precision ); // response
 						}
 
 						self.context.putImageData( matcho, 0, 0 );
+
+						self.drawLine( 'black', w1, 0, w1, h );
+						self.drawLine( 'black', w2, 0, w2, h );
 					}
+					q({offsetX:0,offsetY:0});
+
+					self.show3( left, right, matches, smoothDistance, edgeDistance, size, area, precision );
+
 				};
+
+				self.show3 = function( left, right, matches, smoothDistance, edgeDistance, size, area, precision ) {
+					let c3 = document.createElement( 'canvas' );
+					c3.width = c3.height = 512; 
+					document.body.insertBefore( c3, document.body.firstChild );
+					let setup = Glo.demoSetup( Shadero.lit );
+/*
+       let mesh = {
+        attributes:{
+              aPosition: [ 0,1,0, 1,0,0, 0,0,0 ]
+            , aColor:    [ 1,0,0, 0,1,0, 0,0,1 ]
+        }
+        , faces: [ 0,1,2 ]
+    }
+
+    let axis = Mesho.axis();
+
+    let draw = function() {
+        setup.mouseLoop( );
+        Glo.drawMesh( setup.gl, setup.program, mesh );
+        Glo.drawMesh( setup.gl, setup.program, axis );
+    };
+
+    Utilo.frame( draw, 60 ).start();
+	*/
+				}
 
 				self.smooth = function( neighborhood, w, h, data, selfWeight ) {
 					if ( 0 == neighborhood ) {
@@ -457,12 +505,16 @@
 					let closest = false;
 					let differences = [];
 
+					// search more to the right when on the left side of the image
+					// and vice-versa
+					let o = Math.floor( ( ( 1 - x / w ) - 0.5 ) * area.x * 1.5 );
+
 					for ( let dy = -area.y ; dy <= +area.y ; dy++ ) {
 						let ty = y + dy;
 						if ( ty < 0|| ty >= h ) continue;
 						
 						for ( let dx = -area.x ; dx <= +area.x ; dx++ ) {
-							let tx = x + dx;
+							let tx = x + dx + o;
 							if ( tx < 0|| tx >= w ) continue; 
 
 							let difference = self.compareChunks( 
@@ -472,16 +524,17 @@
 							let d = dx + dy;
 							
 							// TODO: this drop off is probly too much..
+							// should consider the offset of x in the width of the image
 							let wt = 0 == d ? 1 : 1 / d;
 
 							wt=1;
 							difference *= wt;
 							difference = Math.ceil( difference );
-
 							differences.push( difference );
 
 							if ( false === closest || closest.difference > difference 
-								|| ( closest.difference == difference && d < closest.d )
+								|| ( closest.difference == difference && Math.abs(dx) < Math.abs(closest.dx) )
+								//|| ( closest.difference == difference && d < closest.d )
 									) {
 								closest = { difference:difference, x:x,y:y, tx:tx, ty:ty, dx:dx, dy:dy, d:d }
 							}
@@ -518,10 +571,10 @@
 							if ( x0 < 0 || x1 < 0 || x0 >= w || x1 >= w ) continue;
 
 							let d = self.comparePixels( edges , images, x0, y0 , x1, y1 , w, h );
-							if ( false != d ) {
-								count++;
-								difference += d;
-							}
+							if ( false == d ) continue;
+
+							count++;
+							difference += d;
 						}
 					} 
 
@@ -550,7 +603,8 @@
 					let g = g1 - g0;
 					let b = b1 - b0;
 
-					return r * r + g * g + b * b;
+					let v = r * r + g * g + b * b;
+					return v;
 				};
 
 self.eoeo = {};
@@ -646,6 +700,14 @@ if ( k in self.eoeo )self.eoeo[k]++;else self.eoeo[k]=1;
 
 				self.clearLog = function() {
 					self.pre.innerHTML = '';
+				};
+
+				self.drawLine = function( color, x0, y0, x1, y1 ) {
+					self.context.strokeStyle = color;
+					self.context.beginPath();
+					self.context.moveTo( x0, y0 );
+					self.context.lineTo( x1, y1 );
+					self.context.stroke();
 				};
 
 				self.fillRect = function( color, x, y, w, h ) {
