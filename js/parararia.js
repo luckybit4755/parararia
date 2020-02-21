@@ -15,7 +15,7 @@ const Parararia = function() {
 
 	self.init = function() {
 		self.log( 'setup' );
-		'canvas img pre'.split( ' ' ).map( (tag) => { self[ tag ] = theD.first( tag ) }) 
+		'canvas img pre div'.split( ' ' ).map( (tag) => { self[ tag ] = theD.first( tag ) }) 
 
 		self.context = self.canvas.getContext( '2d' );
 		self.context.fillText( 'loading...', 33, 33 );
@@ -25,8 +25,6 @@ const Parararia = function() {
 	};
 
 	self.ezTest = function() {
-		self.div = theD.first( 'div' );
-
 		let n = 16;
 		let ww = [
 			  {c:'black',s:'.',x: 4,y:3, x2: 6}
@@ -127,12 +125,15 @@ const Parararia = function() {
 			throw 'images need to be of the same size';
 		}
 
-		let edges = [];
 		let images = [];
+		let smoothed = [];
+		let edges = [];
+		let combined = [];
+
 		for ( let i = 0 ; i < 2 ; i++ ) {
 			if ( self.div ) self.div.innerHTML += '<span>' + ( i ? 'right':'left' ) + '</span>'
 			let imageData = arguments[ i ];
-			images.push( imageData );
+			images.push( imageData.data );
 
 			self.log( 'creating edge data: #%', edges.length );
 
@@ -143,6 +144,7 @@ const Parararia = function() {
 
 			self.log( 'smoothing' );
 			let smooth = self.smooth( smoothDistance, w, h, tmp.data )
+			smoothed.push( smooth );
 			self.context.putImageData( tmp, 0, 0 );
 			self.log( 'smoothed' );
 			self.debugImage();
@@ -152,12 +154,19 @@ const Parararia = function() {
 			self.context.putImageData( tmp, 0, 0 );
 			self.log( 'edged (nice!)' );
 			self.debugImage();
-
 			edges.push( edge );
+
+			self.log( 'combining' );
+			let combo = self.combine( w, h, tmp.data, smooth, edge );
+			self.context.putImageData( tmp, 0, 0 );
+			self.log( 'combined' );
+			self.debugImage();
+			combined.push( combo );
+
 			if ( self.div ) self.div.innerHTML += '<br/>'
 		}
 
-		return self.chunkHunt( edges, images,size, area, precision, w, h );
+		return self.chunkHunt( {smoothed:smoothed,edges:edges,images:images,combined:combined}, size, area, precision, w, h );
 	};
 
 	// matches from calling self.chunkHunt...
@@ -274,103 +283,99 @@ const Parararia = function() {
 		let x = 4 / left.width;
 		let y = 4 / left.height;
 
+		let zInfo = new Array( left.height );
+		for ( let y = 0 ; y < left.height ; y++ ) {
+			zInfo[ y ] = new Array( left.width ).fill(0);
+		}
+
+		for ( let i = 0 ; i < matches.length; i++ ) {
+			let match = matches[ i ];
+			zInfo[ match.y ][ match.x ] = match.d3.z * 0.20;
+		}
+
+		let points = new Array( left.height );
+		for ( let y = 0 ; y < left.height ; y++ ) {
+			points[ y ] = new Array( left.width );
+		}
+
+		let mmX = new YesMM();
+		let mmY = new YesMM();
+		let mmZ = new YesMM();
+
+		let index = 0;
+		for ( let y = 0 ; y < left.height ; y++ ) {
+			let yv = y / left.height * 2 - 1;
+			for ( let x = 0 ; x < left.width ; x++ ) {
+				let xv = x / left.height * 2 - 1;
+
+				let zv = zInfo[ y ][ x ];
+
+				let r = left.data[ index++ ] / 255;
+				let g = left.data[ index++ ] / 255;
+				let b = left.data[ index++ ] / 255;
+				index++;
+
+				points[ y ][ x ] = { x:xv, y:yv, z:zv, r:r,g:g,b:b };
+
+				mmX.add( xv ); mmY.add( yv ); mmZ.add( zv );
+			}
+		};
+
+		self.log( 'x: % ; y: % ; z: %' , mmX, mmY, mmZ );
+
 		let vertices = [];
 		let colors = [];
 		let faces = [];
 
-		let p1 = function( p ) { vertices.push( p.x + 0 ); vertices.push( p.y + 0 ); vertices.push( p.z + 0 ); };
-		let p2 = function( p ) { vertices.push( p.x + x ); vertices.push( p.y + 0 ); vertices.push( p.z + 0 ); };
-		let p3 = function( p ) { vertices.push( p.x + x ); vertices.push( p.y + y ); vertices.push( p.z + 0 ); };
-		let p4 = function( p ) { vertices.push( p.x + 0 ); vertices.push( p.y + y ); vertices.push( p.z + 0 ); };
+		let add = function( p1, p2, p3 ) {
+			let n = vertices.length / 3;
+			for ( let i = 0 ; i < 3 ; i++ ) faces.push( n + i );
 
-		let xr = new YesMM();
-		let yr = new YesMM();
-		let mr = new YesMM();
-		let zr = new YesMM();
+			vertices.push( p1.x ); vertices.push( p1.y ); vertices.push( p1.z ); 
+			vertices.push( p2.x ); vertices.push( p2.y ); vertices.push( p2.z ); 
+			vertices.push( p3.x ); vertices.push( p3.y ); vertices.push( p3.z ); 
 
-		for ( let i = 0 ; i < matches.length; i++ ) {
-			let match = matches[ i ];
-			let index = 4 * ( match.x + match.y * left.width );
-
-			let r = left.data[ index++ ];
-			let g = left.data[ index++ ];
-			let b = left.data[ index++ ];
-
-			r /= 255;
-			g /= 255;
-			b /= 255;
-
-			let p = match.d3;
-			//self.log( '(%,%)->%->%,%,%: %', match.x, match.y, index, r, g, b, p );
-
-			p.z *= 0.13;
-
-			// huh?
-			p.y += 0.5;
-			p.y *= 2.0;
-			p.y = 2 * ( match.y / left.height ) -1;
-
-			xr.add( p.x );
-			yr.add( p.y );
-			zr.add( p.z );
-			mr.add( match.y );
-
-			for ( let j = 0 ; j < 6 ; j++ ) {
-				let no = vertices.length / 3 
-				faces.push( no + j );
-			}
-			p1( p ); p2( p ); p4( p );
-			p2( p ); p3( p ); p4( p );
-
-			for ( let j = 0 ; j < 6 ; j++ ) {
-				colors.push( r );
-				colors.push( g );
-				colors.push( b );
-			}
-		};
-
-		self.log( 'x: %', xr );
-		self.log( 'y: % <-- %', yr, mr );
-		self.log( 'z: %', zr );
-
-
-		if ( false ) {
-			self.log( 'vertices: %', vertices );
-			self.log( 'faces: %', faces );
-			//self.log( 'colors: %', colors );
-		} else {
-			self.log( '% vertices, % colors, % faces', vertices.length / 3, colors.length / 3, faces.length / 3 );
+			colors.push( p1.r ); colors.push( p1.g ); colors.push( p1.b ); 
+			colors.push( p2.r ); colors.push( p2.g ); colors.push( p2.b ); 
+			colors.push( p3.r ); colors.push( p3.g ); colors.push( p3.b ); 
 		}
 
-		//self.log( '% and %', vertices, 'x' );//.length, colors.length );
+		for ( let y = 0 ; y < left.height - 1 ; y++ ) {
+			for ( let x = 0 ; x < left.width - 1; x++ ) {
+				let p1 = points[ y + 0 ][ x + 0 ]; let p2 = points[ y + 0 ][ x + 1 ];
+				let p4 = points[ y + 1 ][ x + 0 ]; let p3 = points[ y + 1 ][ x + 1 ];
+
+				if ( !p1.y || !p2.y || !p3.y || !p4.y ) continue;
+
+				add( p1, p2, p4 );
+				add( p2, p3, p4 );
+			}
+		}
 
 		let setup = Glo.demoSetup( Shadero.lit );
 		let mesh = {
-			attributes:{
-				aPosition: vertices
-			   , aColor:    colors
-		   }
-		   , faces:faces
+			  faces:faces
+			, attributes:{ aPosition: vertices, aColor: colors }
 		}
 
 		let axis = Mesho.axis();
 
+		self.log( 'vertices.length: %, colors.length:%', vertices.length, colors.length );
+		self.log( 'vertices.count: %, colors.count:%', vertices.length / 3, colors.length /3);
+
 		let draw = function() {
-			setup.mouseLoop( );
+			setup.mouseLoop();
 			Glo.drawMesh( setup.gl, setup.program, axis );
 
-			if ( false ) {
-			Glo.drawMesh( setup.gl, setup.program, mesh );
+			if ( !true ) {
+				Glo.drawMesh( setup.gl, setup.program, mesh ); // idk..
 			} else {
 				for ( let name in mesh.attributes ) {
 					let data = mesh.attributes[ name ];
 					Glo.data( setup.gl, setup.program, name, data );
 				}
-				if ( false ) {
-					Glo.draw( setup.gl, mesh.faces, setup.gl.TRIANGLES ); // idk what's wrong here...
-				} else {
-					setup.gl.drawArrays( setup.gl.TRIANGLES, 0,  mesh.faces.length  );
-				}
+
+				setup.gl.drawArrays( setup.gl.TRIANGLES, 0, vertices.length / 3 );
 			}
 		};
 
@@ -508,9 +513,27 @@ const Parararia = function() {
 		return nu;
 	};
 
+	self.combine = function( w, h, data, smooth, edge ) {
+		let nu = new Array( data.length );
+		let o = 0.4;
+		let l = 1 - o;
+
+		let index = 0;
+		for ( let y = 0 ; y < h ; y++ ) {
+			for ( let x = 0 ; x < w ; x++ ) {
+				nu[ index ] = Math.floor( smooth[ index ] * ( o + l * edge[ index ] / 255 ) ); index++;
+				nu[ index ] = Math.floor( smooth[ index ] * ( o + l * edge[ index ] / 255 ) ); index++;
+				nu[ index ] = Math.floor( smooth[ index ] * ( o + l * edge[ index ] / 255 ) ); index++;
+				nu[ index++ ] = 255;
+			}
+		}
+
+		theD.into( data, nu, index );
+		return nu;
+	};
 	// the wumpus is out of season
 
-	self.chunkHunt = function( edges, images, size, area, precision, w, h ) {
+	self.chunkHunt = function( imageInfo, size, area, precision, w, h ) {
 		let distanceRange = new YesMM();
 		let differenceRange = new YesMM();
 
@@ -526,7 +549,7 @@ const Parararia = function() {
 		for ( let y = 0 ; y < h ; y += precision ) {
 			self.log( 'hunt is at % of %', y, h );
 			for ( let x = 0 ; x < w ; x += precision ) {
-				let match = self.huntThisChunk( edges, images, x, y, w, h, size, area );
+				let match = self.huntThisChunk( imageInfo, x, y, w, h, size, area );
 				if ( !match ) {
 					//console.log( 'sorry: ' + x + ',' + y + ' is unmatched' );
 					continue;
@@ -561,14 +584,14 @@ const Parararia = function() {
 		return matches;
 	};
 
-	self.shouldHunt = function( edges, images, x, y, w, h, size ) {
-		let ez = edges[ 0 ];
+	self.shouldHunt = function( imageInfo, x, y, w, h, size ) {
+		let ez = imageInfo.edges[ 0 ];
 		let idx = 4 * ( x + y * w );
 		return ( ez[ idx++ ] + ez[ idx++ ] + ez[ idx ] > 0 );
 	}
 
-	self.huntThisChunk = function( edges, images, x, y, w, h, size, area ) {
-		if ( !self.shouldHunt( edges, images, x, y, w, h, size ) ) {
+	self.huntThisChunk = function( imageInfo, x, y, w, h, size, area ) {
+		if ( !self.shouldHunt( imageInfo, x, y, w, h, size ) ) {
 			return false;
 		}
 
@@ -588,7 +611,7 @@ const Parararia = function() {
 				if ( tx < 0|| tx >= w ) continue; 
 
 				let difference = self.compareChunks( 
-					edges, images, x, y, tx, ty, w, h, size
+					imageInfo, x, y, tx, ty, w, h, size
 				);
 				if ( false == difference ) continue;
 				let d = dx + dy;
@@ -626,7 +649,7 @@ const Parararia = function() {
 		return closest;
 	};
 
-	self.compareChunks = function( edges, images, x, y, tx, ty, w, h, size ) {
+	self.compareChunks = function( imageInfo, x, y, tx, ty, w, h, size ) {
 		let count = 0;
 		let difference = 0;
 
@@ -640,7 +663,7 @@ const Parararia = function() {
 				let x1 = tx + dx;
 				if ( x0 < 0 || x1 < 0 || x0 >= w || x1 >= w ) continue;
 
-				let d = self.comparePixels( edges , images, x0, y0 , x1, y1 , w, h );
+				let d = self.comparePixels( imageInfo, x0, y0 , x1, y1 , w, h );
 				if ( false == d ) continue;
 
 				count++;
@@ -655,9 +678,9 @@ const Parararia = function() {
 		return count ? difference / count : false;
 	};
 
-	self.comparePixels = function( edges, images, x0,y0, x1,y1, w, h ) {
-		let d0 = images[ 0 ].data;
-		let d1 = images[ 1 ].data;
+	self.comparePixels = function( imageInfo, x0,y0, x1,y1, w, h ) {
+		let d0 = imageInfo.combined[ 0 ];
+		let d1 = imageInfo.combined[ 1 ];
 
 		let index0 = 4 * ( x0 + y0 * w );
 		let r0 = d0[ index0++ ];
@@ -682,7 +705,7 @@ self.fkfkf = function(k) {
 if ( k in self.eoeo )self.eoeo[k]++;else self.eoeo[k]=1;
 }
 	// distance in rgb space or false if no comparison
-	self.komparePixels = function( edges, images, x0,y0, x1,y1, w, h ) {
+	self.komparePixels = function( imageInfo, x0,y0, x1,y1, w, h ) {
 		let edgeThreshold = 0;
 
 		let index0 = 4 * ( x0 + y0 * w );
